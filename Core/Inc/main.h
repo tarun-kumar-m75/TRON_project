@@ -46,7 +46,7 @@ extern "C" {
 
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
-
+extern ADC_HandleTypeDef hadc1;
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/

@@ -1,6 +1,8 @@
 #include <tk/tkernel.h>
 #include <tm/tmonitor.h>
+#include "main.h"
 
+uint32_t value = 0;
 LOCAL void task_1(INT stacd, void *exinf);	// task execution function
 LOCAL ID	tskid_1;			// Task ID number
 LOCAL T_CTSK ctsk_1 = {				// Task creation information
@@ -20,29 +22,28 @@ LOCAL T_CTSK ctsk_2 = {				// Task creation information
 };
 
 LOCAL void task_1(INT stacd, void *exinf){
+
 	while(1){
-		tm_printf((UB*)"task 1\n");
-		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
-		tk_dly_tsk(500);
+		HAL_ADC_Start(&hadc1);
+		HAL_ADC_PollForConversion(&hadc1, 100);
+		value = HAL_ADC_GetValue(&hadc1);
+		tk_dly_tsk(100);
 	}
 }
 
 LOCAL void task_2(INT stacd, void *exinf){
 	while(1){
-		tm_printf((UB*)"task 2\n");
-		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
-		tk_dly_tsk(200);
+		tm_printf((UB*)"adc value : ");
+		tm_printf((UB*)"%d\n",value);
+		tk_dly_tsk(50);
 	}
 }
 
 EXPORT INT usermain(void)
 {
+	/* Create & Start Tasks */
 	tm_putstring((UB*)"Start User-main program.\n");
 
-	/* Turn off the LED on the board. */
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
-
-	/* Create & Start Tasks */
 	tskid_1 = tk_cre_tsk(&ctsk_1);
 	tk_sta_tsk(tskid_1, 0);
 
@@ -53,4 +54,3 @@ EXPORT INT usermain(void)
 
 	return 0;
 }
-
