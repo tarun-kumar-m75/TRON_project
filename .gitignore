@@ -1,0 +1,22 @@
+# Build output
+Debug/
+Release/
+
+# Eclipse/CubeIDE
+.settings/
+*.launch
+
+# Compiler artifacts
+*.o
+*.d
+*.su
+
+# Final binaries
+*.elf
+*.hex
+*.bin
+*.map
+
+# OS files
+.DS_Store
+Thumbs.db
