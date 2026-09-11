@@ -15,6 +15,8 @@ extern T_CTSK ctsk_3;
 
 void motor_stop(void);
 void motor_forward(uint16_t duty);
+void motor_turn_right(uint16_t duty);
+void motor_turn_left(uint16_t duty);
 void motor_task(INT stacd, void *exinf);
 
 #endif /* INC_MOTOR_TASK_H_ */
