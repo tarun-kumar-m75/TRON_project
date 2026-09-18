@@ -32,6 +32,26 @@ extern TIM_HandleTypeDef htim3;
  * measurement = 500ms of silence, treated as "no fresh reading". */
 #define STALE_LOOPS 5
 
+/* TRIG (PA7/TIM3_CH2) and ECHO (PA6/TIM3_CH1) are adjacent pins, so a
+ * TRIG edge can capacitively couple straight onto the ECHO input
+ * capture line and look like a real echo rising+falling edge pair -
+ * typically a pulse only a few microseconds to a few tens of
+ * microseconds wide. That's what was producing the ~54us "frozen"
+ * readings: a plausible-looking but bogus sub-2cm distance every
+ * cycle, which permanently tripped OBSTACLE_STOP_CM (25cm) in
+ * motor_task.c and kept the rover stuck sweeping/turning in the
+ * obstacle-avoidance branch instead of ever reaching the RSSI-approach
+ * branch - i.e. exactly the "keeps rotating, never approaches"
+ * symptom. The HC-SR04's own minimum rated range is ~2cm (~116us
+ * round-trip), so any captured pulse shorter than that physically
+ * cannot be a real echo - reject it as crosstalk noise. Also reject
+ * implausibly long pulses (further than the sensor's ~4-4.5m rated
+ * max range) so a missed edge / counter wraparound glitch can't report
+ * a bogus "all clear" either. TUNE MIN_ECHO_US up further if you still
+ * see occasional short-pulse readings after this. */
+#define MIN_ECHO_US   150     /* below HC-SR04's ~2cm minimum range -> discard as crosstalk */
+#define MAX_ECHO_US   25000   /* above ~4.3m -> discard as a bad capture */
+
 typedef enum { WAIT_RISING, WAIT_FALLING } EdgeState;
 
 static volatile EdgeState edge_state = WAIT_RISING;
@@ -39,6 +59,7 @@ static volatile uint32_t  echo_start = 0;
 static volatile uint32_t  echo_val   = 0;   /* last COMPLETE pulse width, in us */
 static volatile uint8_t   new_echo_ready = 0;
 volatile uint32_t capture_count = 0;
+volatile uint32_t rejected_count = 0;   /* short/long pulses discarded as noise */
 
 volatile uint8_t ultrasonic_lost = 1;
 float last_distance_cm = -1.0f;
@@ -64,16 +85,17 @@ float read_distance(void){
 
         tm_printf((UB*)"duration = %lu us\r\n", (unsigned long)echo_val);
         tm_printf((UB*)"distance = %d cm\r\n", (int)last_distance_cm);
-        tm_printf((UB*)"CNT = %lu, captures = %lu\r\n",
-                  __HAL_TIM_GET_COUNTER(&htim3), (unsigned long)capture_count);
+        tm_printf((UB*)"CNT = %lu, captures = %lu, rejected = %lu\r\n",
+                  __HAL_TIM_GET_COUNTER(&htim3), (unsigned long)capture_count,
+                  (unsigned long)rejected_count);
     } else {
         /* No completed rising+falling edge pair this cycle. */
         if(us_stale_counter < 0xFFFFFFFFu) us_stale_counter++;
         if(us_stale_counter >= STALE_LOOPS){
             ultrasonic_lost = 1;
         }
-        tm_printf((UB*)"ultrasonic: no fresh echo this cycle (captures=%lu)\r\n",
-                  (unsigned long)capture_count);
+        tm_printf((UB*)"ultrasonic: no fresh echo this cycle (captures=%lu, rejected=%lu)\r\n",
+                  (unsigned long)capture_count, (unsigned long)rejected_count);
     }
     return last_distance_cm;
 }
@@ -132,8 +154,16 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
                 duration = (49999u - echo_start) + val + 1u;
             }
 
-            echo_val = duration;
-            new_echo_ready = 1;
+            /* Reject implausible pulse widths (TRIG->ECHO crosstalk on
+             * the adjacent PA6/PA7 pins, or a missed-edge glitch)
+             * instead of reporting them as a valid distance. See the
+             * MIN_ECHO_US / MAX_ECHO_US comment above. */
+            if(duration < MIN_ECHO_US || duration > MAX_ECHO_US){
+                rejected_count++;
+            } else {
+                echo_val = duration;
+                new_echo_ready = 1;
+            }
 
             edge_state = WAIT_RISING;
             __HAL_TIM_SET_CAPTUREPOLARITY(htim, TIM_CHANNEL_1, TIM_INPUTCHANNELPOLARITY_RISING);
