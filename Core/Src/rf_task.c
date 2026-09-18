@@ -14,12 +14,34 @@
 
 #define buf_size 5
 #define RSSI_LOST_SENTINEL -127
-/* rf_task1 loops every 100ms (tk_dly_tsk(100)). 5 loops with no fresh
- * byte at all = 500ms of silence on the wire, matching the ESP32's own
- * LOST_TIMEOUT_MS. This is a software loop-counter, not a hardware
- * timer, since it only needs to be "good enough" to flag staleness -
- * exact wall-clock timing isn't required here. */
 #define STALE_LOOPS 5
+
+/* ---------------- Raw-RSSI anchor overrides ----------------------------
+ * The trained regressor has a limited "vocabulary" of output values
+ * (small forest: 15 trees, max_depth=5, for flash-size reasons). In the
+ * noisy, overlapping 2-4m RSSI region, it can't confidently separate
+ * different true distances, so it collapses toward a common "hedge"
+ * value (e.g. repeatedly outputting ~1.24m) instead of a real estimate.
+ *
+ * Fix: don't trust the model at the extremes, where raw RSSI alone
+ * already tells you the answer with much more confidence than the
+ * model's ambiguous middle-ground output ever could:
+ *   - Very STRONG signal (>= RSSI_STRONG_DBM) -> definitely close.
+ *     Override to ANCHOR_CLOSE_M regardless of what the model says.
+ *   - Very WEAK signal (<= RSSI_WEAK_DBM) -> definitely far.
+ *     Override to ANCHOR_FAR_M (kept above COARSE_THRESHOLD_M in
+ *     motor_task.c, so this correctly falls into coarse/trend mode).
+ *   - Only in between does the model's own prediction get used as-is -
+ *     that's the genuinely ambiguous zone the model was actually
+ *     trained to resolve.
+ * TUNE these thresholds against your real fixed-mount session data -
+ * e.g. look at your per-distance RSSI table: values consistently seen
+ * at 0.5m are good candidates for RSSI_STRONG_DBM, values consistently
+ * seen at 4m+ for RSSI_WEAK_DBM. */
+#define RSSI_STRONG_DBM   -66   /* stronger (less negative) than this -> anchor CLOSE */
+#define RSSI_WEAK_DBM     -82   /* weaker (more negative) than this -> anchor FAR */
+#define ANCHOR_CLOSE_M    0.3f
+#define ANCHOR_FAR_M      5.0f
 
 extern UART_HandleTypeDef huart1;
 volatile uint8_t uart_rx_flag = 0;
@@ -30,20 +52,12 @@ int8_t rssi_average = 0;
 int sum = 0;
 int count = 0;
 
-/* signal_lost starts at 1 (lost) until the first real byte arrives -
- * we don't want downstream logic trusting rssi_average=0 as if it were
- * a real reading before any data has come in at all. */
 volatile uint8_t signal_lost = 1;
 static uint32_t stale_counter = STALE_LOOPS;
 
-/* Feature vector matching the training pipeline's FEATURE_COLS order:
- * [rssi_mean, rssi_std, rssi_min, rssi_max, rssi_median]. Computed from
- * the same 5-sample rssi_buffer already being kept for the average -
- * no new sampling logic needed, just more stats over the existing data. */
 float rssi_features[5] = {0};
 volatile uint8_t features_valid = 0;
 
-/* Model output - what motor_task actually reads. */
 float target_distance_m = -1.0f;
 volatile uint8_t distance_valid = 0;
 
@@ -82,7 +96,17 @@ static void compute_features_and_predict(void){
 	rssi_features[4] = (float)median;
 	features_valid = 1;
 
-	target_distance_m = predict_distance(rssi_features);
+	/* Anchor override check BEFORE trusting the model's output -
+	 * uses rssi_average (already computed, same underlying data). */
+	if(rssi_average >= RSSI_STRONG_DBM){
+		target_distance_m = ANCHOR_CLOSE_M;
+		tm_printf((UB*)"RF: anchor CLOSE override (rssi=%d)\r\n", rssi_average);
+	} else if(rssi_average <= RSSI_WEAK_DBM){
+		target_distance_m = ANCHOR_FAR_M;
+		tm_printf((UB*)"RF: anchor FAR override (rssi=%d)\r\n", rssi_average);
+	} else {
+		target_distance_m = predict_distance(rssi_features);
+	}
 	distance_valid = 1;
 }
 
@@ -99,17 +123,11 @@ static void compute_features_and_predict(void){
 void receive_rssi(void){
 	if(uart_rx_flag == 1){
 		uart_rx_flag = 0;
-		stale_counter = 0;   // a byte arrived this cycle, link is alive
+		stale_counter = 0;
 
 		if(rssi_received == RSSI_LOST_SENTINEL){
-			/* ESP32 explicitly reported "target lost". Don't fold this
-			 * sentinel into the RSSI moving average - it isn't a real
-			 * (very weak) reading, it's a flag. Just raise signal_lost
-			 * and leave rssi_average/rssi_buffer untouched so the last
-			 * known-good average is still visible if useful, but the
-			 * flag tells callers not to trust it as current. */
 			signal_lost = 1;
-			distance_valid = 0;   /* don't let motor_task drive on a stale prediction */
+			distance_valid = 0;
 			return;
 		}
 
@@ -125,12 +143,6 @@ void receive_rssi(void){
 			compute_features_and_predict();
 		}
 	} else {
-		/* No byte at all this cycle. This is different from getting an
-		 * explicit LOST sentinel - it could mean the UART link itself
-		 * is down (unplugged, ESP32 crashed/reset) rather than just
-		 * the BLE target being out of range. Either way, past a certain
-		 * point of silence we shouldn't keep reporting a stale average
-		 * as if it were current. */
 		if(stale_counter < 0xFFFFFFFFu) stale_counter++;
 		if(stale_counter >= STALE_LOOPS){
 			signal_lost = 1;

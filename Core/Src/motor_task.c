@@ -133,30 +133,45 @@ void motor_task(INT stacd, void *exinf){
 			tm_printf((UB*)"Motor: STOPPED (ultrasonic stale/no reading)\r\n");
 
 		} else if(last_distance_cm >= 0 && last_distance_cm <= OBSTACLE_STOP_CM){
-			/* Obstacle detected - stop, sweep to find the clearest
-			 * heading, then turn PROPORTIONALLY toward it instead of
-			 * always blindly turning the same fixed direction. */
-			motor_stop();
-			tm_printf((UB*)"Motor: OBSTACLE at %d cm - sweeping\r\n",
-			          (int)last_distance_cm);
-			tk_dly_tsk(100);
-
-			int best_idx = servo_sweep_and_find_best();
-			int center_idx = SERVO_NUM_ANGLES / 2;
-			int offset = best_idx - center_idx;
-
-			if(offset < 0){
-				tm_printf((UB*)"Motor: turning LEFT (%d step(s))\r\n", -offset);
-				motor_turn_left(TURN_DUTY);
-				tk_dly_tsk((-offset) * TURN_STEP_MS);
+			/* Something is close. Before treating this as an obstacle
+			 * to avoid, check whether the RSSI model ALSO says we're
+			 * very close to the target - if so, this close object is
+			 * almost certainly the target itself (e.g. the phone), not
+			 * an unrelated obstacle, and we should stop, not reroute
+			 * around it. Without this check, the rover would sweep and
+			 * turn away from the target every time it got close enough
+			 * for the ultrasonic sensor to physically see it. */
+			if(distance_valid && !signal_lost && target_distance_m <= ARRIVE_THRESHOLD_M){
 				motor_stop();
-			} else if(offset > 0){
-				tm_printf((UB*)"Motor: turning RIGHT (%d step(s))\r\n", offset);
-				motor_turn_right(TURN_DUTY);
-				tk_dly_tsk(offset * TURN_STEP_MS);
-				motor_stop();
+				tm_printf((UB*)"Motor: ARRIVED (ultrasonic %d cm + RSSI %d cm agree)\r\n",
+				          (int)last_distance_cm, (int)(target_distance_m * 100));
+
 			} else {
-				tm_printf((UB*)"Motor: straight ahead is already clearest\r\n");
+				/* Genuine obstacle, unrelated to the target - stop,
+				 * sweep to find the clearest heading, then turn
+				 * PROPORTIONALLY toward it. */
+				motor_stop();
+				tm_printf((UB*)"Motor: OBSTACLE at %d cm - sweeping\r\n",
+				          (int)last_distance_cm);
+				tk_dly_tsk(100);
+
+				int best_idx = servo_sweep_and_find_best();
+				int center_idx = SERVO_NUM_ANGLES / 2;
+				int offset = best_idx - center_idx;
+
+				if(offset < 0){
+					tm_printf((UB*)"Motor: turning LEFT (%d step(s))\r\n", -offset);
+					motor_turn_left(TURN_DUTY);
+					tk_dly_tsk((-offset) * TURN_STEP_MS);
+					motor_stop();
+				} else if(offset > 0){
+					tm_printf((UB*)"Motor: turning RIGHT (%d step(s))\r\n", offset);
+					motor_turn_right(TURN_DUTY);
+					tk_dly_tsk(offset * TURN_STEP_MS);
+					motor_stop();
+				} else {
+					tm_printf((UB*)"Motor: straight ahead is already clearest\r\n");
+				}
 			}
 			/* Loop back around - next iteration re-checks ultrasonic
 			 * (now facing forward again, post-turn) before resuming
