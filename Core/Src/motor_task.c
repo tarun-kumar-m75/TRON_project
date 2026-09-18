@@ -15,11 +15,20 @@
  * differential/skid-steer drive. Turning is done by spinning the two
  * sides in OPPOSITE directions (a pivot/tank turn).
  *
- * Obstacle handling now uses the ultrasonic-mounted servo sweep
+ * Obstacle handling uses the ultrasonic-mounted servo sweep
  * (servo_task.c) to pick an INFORMED heading, instead of always
- * blindly turning the same fixed direction. RSSI itself is still not
- * direction-aware (antenna isn't on the servo) - this only improves
- * obstacle/path-finding, not signal bearing.
+ * blindly turning the same fixed direction.
+ *
+ * Bearing-finding: RSSI from a single, roughly omnidirectional
+ * antenna is a scalar (signal strength), not a vector - it can't tell
+ * you a direction on its own. The antenna isn't servo-mounted (a
+ * dipole whip swept through headings wouldn't discriminate angle any
+ * better than leaving it fixed - see project chat), so bearing has to
+ * come from comparing RSSI across CHASSIS headings: periodically pivot
+ * through a ring of headings, sample filtered RSSI at each, and turn
+ * to face whichever was strongest. This is the RSSI equivalent of
+ * servo_sweep_and_find_best() below, just rotating the whole rover
+ * instead of a servo horn.
  */
 
 #include <motor_task.h>
@@ -45,10 +54,124 @@ extern TIM_HandleTypeDef htim1;
 #define OBSTACLE_STOP_CM     25
 #define TURN_DUTY            400
 #define TURN_STEP_MS         300   /* open-loop turn time PER 45-degree
-                                       sweep step - no encoders, so this
-                                       is timing-based. TUNE by testing
-                                       how far one step actually turns
-                                       your specific rover. */
+                                       step - no encoders, so this is
+                                       timing-based. TUNE by testing how
+                                       far one step actually turns your
+                                       specific rover. Reused below for
+                                       bearing-sweep turns - same
+                                       drivetrain, same calibration. */
+
+/* ---------------- RSSI bearing sweep (chassis rotation) ---------------- */
+
+#define BEARING_NUM_STEPS      8     /* headings sampled per sweep, evenly
+                                         spaced (45 deg apart with 8 steps
+                                         and TURN_STEP_MS per step). Fewer
+                                         steps = faster sweep, coarser
+                                         bearing; more steps = slower,
+                                         finer. TUNE against how much
+                                         RSSI actually swings by heading
+                                         on your hardware (whip antenna -
+                                         expect a small swing, a few dB). */
+#define BEARING_SETTLE_MS      900   /* wait after each turn before
+                                         trusting rssi_average - lets the
+                                         old heading's samples flush out
+                                         of rf_task.c's 5-sample buffer
+                                         and fresh ones arrive from the
+                                         new heading. TUNE UP if you see
+                                         a heading's readings still look
+                                         like the previous heading's. */
+#define BEARING_SAMPLE_COUNT   4     /* extra polls of rssi_average per
+                                         heading, averaged, on top of
+                                         rf_task.c's own 5-sample
+                                         average - the RSSI swing here is
+                                         small, so extra averaging matters
+                                         more than it does for the coarse
+                                         anchor overrides in rf_task.c. */
+#define BEARING_SAMPLE_GAP_MS  150
+#define BEARING_LOST_RSSI      (-128)  /* worse than any real RSSI byte
+                                           (int8_t range), so a heading
+                                           with no valid signal never wins */
+
+static int8_t bearing_rssi[BEARING_NUM_STEPS];
+
+/* Pivot through BEARING_NUM_STEPS headings, sample filtered RSSI at
+ * each, turn back to face whichever heading averaged strongest, and
+ * return that step's index. Always turns the SAME direction (right)
+ * while sweeping outward, then turns the opposite direction (left) to
+ * return to the winning heading - assumes left/right pivot turns are
+ * symmetric for the same duty/duration, matching the existing
+ * obstacle-avoidance turn logic below. Re-check that assumption on
+ * hardware if the rover ends up facing noticeably off from the
+ * heading it printed as "best". */
+static int bearing_sweep_and_find_best(void){
+	int best_idx = 0;
+	int8_t best_rssi = BEARING_LOST_RSSI;
+
+	tm_printf((UB*)"Bearing: starting sweep (%d headings)\r\n", BEARING_NUM_STEPS);
+
+	for(int i = 0; i < BEARING_NUM_STEPS; i++){
+		if(i > 0){
+			motor_turn_right(TURN_DUTY);
+			tk_dly_tsk(TURN_STEP_MS);
+			motor_stop();
+		}
+		tk_dly_tsk(BEARING_SETTLE_MS);
+
+		int32_t sum = 0;
+		int valid_samples = 0;
+		for(int s = 0; s < BEARING_SAMPLE_COUNT; s++){
+			if(!signal_lost && distance_valid){
+				sum += rssi_average;
+				valid_samples++;
+			}
+			tk_dly_tsk(BEARING_SAMPLE_GAP_MS);
+		}
+
+		int8_t heading_rssi = (valid_samples > 0)
+		                       ? (int8_t)(sum / valid_samples)
+		                       : BEARING_LOST_RSSI;
+		bearing_rssi[i] = heading_rssi;
+
+		tm_printf((UB*)"Bearing step %d: rssi=%d (%d/%d valid samples)\r\n",
+		          i, heading_rssi, valid_samples, BEARING_SAMPLE_COUNT);
+
+		if(heading_rssi > best_rssi){
+			best_rssi = heading_rssi;
+			best_idx = i;
+		}
+	}
+
+	/* We're now physically at the LAST sampled heading
+	 * (BEARING_NUM_STEPS-1 turn-steps clockwise from where the sweep
+	 * started). Turn back (counter-clockwise) to face best_idx. */
+	int steps_back = (BEARING_NUM_STEPS - 1) - best_idx;
+	if(steps_back > 0){
+		motor_turn_left(TURN_DUTY);
+		tk_dly_tsk(steps_back * TURN_STEP_MS);
+		motor_stop();
+	}
+
+	tm_printf((UB*)"Bearing: best heading step=%d (rssi=%d) - facing it now\r\n",
+	          best_idx, best_rssi);
+	return best_idx;
+}
+
+/* How often to re-run the bearing sweep while actively approaching.
+ * Counted in motor_task's own 100ms loop period, only while driving
+ * forward toward the target (not while stopped/arrived/avoiding an
+ * obstacle) - see ms_since_bearing_sweep below.
+ * Too short: wastes time re-sweeping instead of covering ground.
+ * Too long: the rover can drift/drive past a heading change (target
+ * moved, or the rover's own heading drifted) before correcting.
+ * TUNE against how fast your target/rover actually move. */
+#define BEARING_SWEEP_INTERVAL_MS   4000
+#define MOTOR_LOOP_PERIOD_MS        100
+
+/* Initialized already-due so the FIRST time the rover has a valid
+ * RSSI distance and a clear path, it sweeps for a bearing before ever
+ * committing to a blind forward drive - this is what was missing
+ * before (rover only ever knew "how far", never "which way"). */
+static uint32_t ms_since_bearing_sweep = BEARING_SWEEP_INTERVAL_MS;
 
 ID	tskid_3;
 T_CTSK ctsk_3 = {
@@ -138,9 +261,7 @@ void motor_task(INT stacd, void *exinf){
 			 * very close to the target - if so, this close object is
 			 * almost certainly the target itself (e.g. the phone), not
 			 * an unrelated obstacle, and we should stop, not reroute
-			 * around it. Without this check, the rover would sweep and
-			 * turn away from the target every time it got close enough
-			 * for the ultrasonic sensor to physically see it. */
+			 * around it. */
 			if(distance_valid && !signal_lost && target_distance_m <= ARRIVE_THRESHOLD_M){
 				motor_stop();
 				tm_printf((UB*)"Motor: ARRIVED (ultrasonic %d cm + RSSI %d cm agree)\r\n",
@@ -172,10 +293,12 @@ void motor_task(INT stacd, void *exinf){
 				} else {
 					tm_printf((UB*)"Motor: straight ahead is already clearest\r\n");
 				}
+				/* An obstacle-avoidance turn changed our heading - force
+				 * a fresh bearing sweep before driving forward again
+				 * instead of trusting whatever heading was "best" before
+				 * we turned to dodge something. */
+				ms_since_bearing_sweep = BEARING_SWEEP_INTERVAL_MS;
 			}
-			/* Loop back around - next iteration re-checks ultrasonic
-			 * (now facing forward again, post-turn) before resuming
-			 * RSSI-based approach. */
 
 		} else {
 			/* PRIORITY 2: path is clear - fall through to RSSI-based
@@ -183,11 +306,24 @@ void motor_task(INT stacd, void *exinf){
 			if(!distance_valid || signal_lost){
 				motor_stop();
 				tm_printf((UB*)"Motor: stopped (no valid RSSI distance)\r\n");
+				/* No signal to bear on right now - re-sweep as soon as
+				 * it comes back instead of resuming a stale heading. */
+				ms_since_bearing_sweep = BEARING_SWEEP_INTERVAL_MS;
+
 			} else if(target_distance_m <= ARRIVE_THRESHOLD_M){
 				motor_stop();
 				tm_printf((UB*)"Motor: arrived (dist=%d cm)\r\n",
 				          (int)(target_distance_m * 100));
+
+			} else if(ms_since_bearing_sweep >= BEARING_SWEEP_INTERVAL_MS){
+				ms_since_bearing_sweep = 0;
+				bearing_sweep_and_find_best();
+				/* Next loop iteration re-checks ultrasonic/RSSI and
+				 * drives forward along the now-corrected heading. */
+
 			} else {
+				ms_since_bearing_sweep += MOTOR_LOOP_PERIOD_MS;
+
 				float ratio = (target_distance_m - ARRIVE_THRESHOLD_M) /
 				              (SLOWDOWN_START_M - ARRIVE_THRESHOLD_M);
 				if(ratio > 1.0f) ratio = 1.0f;
@@ -200,6 +336,6 @@ void motor_task(INT stacd, void *exinf){
 			}
 		}
 
-		tk_dly_tsk(100);
+		tk_dly_tsk(MOTOR_LOOP_PERIOD_MS);
 	}
 }
