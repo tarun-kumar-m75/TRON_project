@@ -16,28 +16,7 @@
 #define RSSI_LOST_SENTINEL -127
 #define STALE_LOOPS 5
 
-/* ---------------- Raw-RSSI anchor overrides ----------------------------
- * The trained regressor has a limited "vocabulary" of output values
- * (small forest: 15 trees, max_depth=5, for flash-size reasons). In the
- * noisy, overlapping 2-4m RSSI region, it can't confidently separate
- * different true distances, so it collapses toward a common "hedge"
- * value (e.g. repeatedly outputting ~1.24m) instead of a real estimate.
- *
- * Fix: don't trust the model at the extremes, where raw RSSI alone
- * already tells you the answer with much more confidence than the
- * model's ambiguous middle-ground output ever could:
- *   - Very STRONG signal (>= RSSI_STRONG_DBM) -> definitely close.
- *     Override to ANCHOR_CLOSE_M regardless of what the model says.
- *   - Very WEAK signal (<= RSSI_WEAK_DBM) -> definitely far.
- *     Override to ANCHOR_FAR_M (kept above COARSE_THRESHOLD_M in
- *     motor_task.c, so this correctly falls into coarse/trend mode).
- *   - Only in between does the model's own prediction get used as-is -
- *     that's the genuinely ambiguous zone the model was actually
- *     trained to resolve.
- * TUNE these thresholds against your real fixed-mount session data -
- * e.g. look at your per-distance RSSI table: values consistently seen
- * at 0.5m are good candidates for RSSI_STRONG_DBM, values consistently
- * seen at 4m+ for RSSI_WEAK_DBM. */
+/* ---------------- Raw-RSSI anchor overrides ---------------------------- */
 #define RSSI_STRONG_DBM   -66   /* stronger (less negative) than this -> anchor CLOSE */
 #define RSSI_WEAK_DBM     -82   /* weaker (more negative) than this -> anchor FAR */
 #define ANCHOR_CLOSE_M    0.3f
@@ -60,6 +39,15 @@ volatile uint8_t features_valid = 0;
 
 float target_distance_m = -1.0f;
 volatile uint8_t distance_valid = 0;
+
+static float apply_anchor_override(float model_prediction, int8_t rssi){
+	if(rssi >= RSSI_STRONG_DBM){
+		return ANCHOR_CLOSE_M;
+	} else if(rssi <= RSSI_WEAK_DBM){
+		return ANCHOR_FAR_M;
+	}
+	return model_prediction;
+}
 
 static void compute_features_and_predict(void){
 	int8_t sorted[buf_size];
@@ -96,24 +84,18 @@ static void compute_features_and_predict(void){
 	rssi_features[4] = (float)median;
 	features_valid = 1;
 
-	/* Anchor override check BEFORE trusting the model's output -
-	 * uses rssi_average (already computed, same underlying data). */
-	if(rssi_average >= RSSI_STRONG_DBM){
-		target_distance_m = ANCHOR_CLOSE_M;
-		tm_printf((UB*)"RF: anchor CLOSE override (rssi=%d)\r\n", rssi_average);
-	} else if(rssi_average <= RSSI_WEAK_DBM){
-		target_distance_m = ANCHOR_FAR_M;
-		tm_printf((UB*)"RF: anchor FAR override (rssi=%d)\r\n", rssi_average);
-	} else {
-		target_distance_m = predict_distance(rssi_features);
-	}
+	float model_prediction = predict_distance(rssi_features);
+	target_distance_m = apply_anchor_override(model_prediction, rssi_average);
 	distance_valid = 1;
 }
 
 // task execution function
  ID	tskid_1;			// Task ID number
  T_CTSK ctsk_1 = {				// Task creation information
-	.itskpri	= 10,
+	.itskpri	= 15,   /* lowest of the three tasks - ultrasonic (5) and
+	                       motor (10) both take priority over RF, since
+	                       obstacle safety and motor reaction matter more
+	                       than shaving a few hundred ms off RSSI freshness */
 	.stksz		= 1024,
 	.task		= rf_task1,
 	.tskatr		= TA_HLNG | TA_RNG3,
