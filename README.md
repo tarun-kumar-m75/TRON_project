@@ -9,7 +9,7 @@ Suggested: a clear, well-lit photo of the full rover from a 3/4 angle,
 showing the chassis, sensors, and antenna. This is the first thing
 anyone visiting the repo sees.
 -->
-![Rover hero shot](./docs/images/rover-hero.png)
+![Rover hero shot](./Photos/side.jpeg)
 
 An autonomous rover that locates a person carrying a BLE beacon by RSSI
 signal strength, navigates toward them while avoiding obstacles, and
