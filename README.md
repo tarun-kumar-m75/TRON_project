@@ -1,4 +1,4 @@
-# TRON — Beacon-Tracking Rescue Rover
+# Beacon-Tracking Rescue Rover
 
 <!-- Badges: replace with real ones once CI/license are set up -->
 
@@ -60,6 +60,7 @@ flowchart LR
 ---
 
 ## Architecture
+![Rover top shot](./Photos/side.jpeg)
 
 Two-MCU design, communicating over UART:
 
