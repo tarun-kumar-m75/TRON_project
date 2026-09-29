@@ -1,5 +1,8 @@
 # TRON — System Architecture and Operational Documentation
 
+![architecture](./Photos/rescue_rover_system_architecture.png)
+
+
 ## 1. Purpose
 
 This document describes the system architecture, task-level design, and
