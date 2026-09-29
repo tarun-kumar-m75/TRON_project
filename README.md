@@ -10,6 +10,7 @@ showing the chassis, sensors, and antenna. This is the first thing
 anyone visiting the repo sees.
 -->
 ![Rover hero shot](./Photos/side.jpeg)
+![Rover top shot](./Photos/top.jpeg)
 
 An autonomous rover that locates a person carrying a BLE beacon by RSSI
 signal strength, navigates toward them while avoiding obstacles, and
@@ -60,7 +61,7 @@ flowchart LR
 ---
 
 ## Architecture
-![Rover top shot](./Photos/top.jpeg)
+![architecture](./Photos/rescue_rover_system_architecture.png)
 
 Two-MCU design, communicating over UART:
 
