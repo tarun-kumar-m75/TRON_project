@@ -177,6 +177,7 @@ tracking the beacon and avoiding an obstacle during a test run.
 - STM32CubeIDE
 - mtk3bsp2 (μT-Kernel 3.0 BSP for STM32H5)
 - Arduino IDE or PlatformIO (for the ESP32 firmware)
+- nRF Connect Mobile app (for the beacon)
 
 ### Building the STM32 firmware
 ```bash
