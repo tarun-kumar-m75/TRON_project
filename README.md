@@ -49,15 +49,6 @@ with the BLE beacon and obstacle sensor as inputs. Can replace the
 Mermaid diagram below if you'd rather use a hand-drawn/Figma version.
 -->
 
-```mermaid
-flowchart LR
-    Beacon["BLE Beacon (RESCUE_BEACON)"] -.RSSI.-> ESP32
-    ESP32["ESP32\n(NimBLE scan + filtering)"] -->|UART, 1 byte/sample| STM32
-    Ultrasonic["HC-SR04\nUltrasonic Sensor"] --> STM32
-    STM32["STM32H533RE\n(uT-Kernel 3.0)"] --> Motors["L298N + DC Motors\n(skid-steer)"]
-    STM32 --> Servo["Servo\n(sensor sweep)"]
-```
-
 ---
 
 ## Architecture
