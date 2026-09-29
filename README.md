@@ -164,8 +164,9 @@ IMAGE/VIDEO: Rover in action
 Suggested: a short GIF or embedded video link showing the rover
 tracking the beacon and avoiding an obstacle during a test run.
 -->
+<!--
 ![Demo GIF](./docs/images/demo.gif)
-
+-->
 ---
 
 ## Getting Started
@@ -225,7 +226,6 @@ pio run --target upload
 IMAGE: Team photo
 Suggested: a photo of the team, or individual headshots with names/roles.
 -->
-![Team photo](./docs/images/team.png)
 
 | Name | Role |
 |---|---|
