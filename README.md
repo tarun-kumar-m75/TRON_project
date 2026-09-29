@@ -240,3 +240,10 @@ Suggested: a photo of the team, or individual headshots with names/roles.
 |---|---|
 | Tarun Kumar M | Firmware (STM32, RTOS) , Hardware|
 | Jai Suriyan V | Hardware, AI/ML integration, ESP32 programming |
+
+For the detailed system design and operational logic, see
+[ARCHITECTURE.md](./ARCHITECTURE.md).
+
+
+
+
