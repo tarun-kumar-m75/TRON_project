@@ -60,7 +60,7 @@ flowchart LR
 ---
 
 ## Architecture
-![Rover top shot](./Photos/side.jpeg)
+![Rover top shot](./Photos/top.jpeg)
 
 Two-MCU design, communicating over UART:
 
@@ -238,5 +238,5 @@ Suggested: a photo of the team, or individual headshots with names/roles.
 
 | Name | Role |
 |---|---|
-| Tarun Kumar M | Firmware (STM32, RTOS) |
-| _(add teammates here)_ | |
+| Tarun Kumar M | Firmware (STM32, RTOS) , Hardware|
+| Jai Suriyan V | Hardware, AI/ML integration, ESP32 programming |
