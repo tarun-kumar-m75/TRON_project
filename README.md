@@ -87,7 +87,6 @@ IMAGE: Component layout / labeled parts photo
 Suggested: a top-down or exploded photo of the rover with each major
 component labeled (STM32, ESP32, L298N, HC-SR04, servo, battery, BMS).
 -->
-![Hardware layout](./docs/images/hardware-layout.png)
 
 | Component | Details |
 |---|---|
@@ -123,7 +122,6 @@ IMAGE: Pinout diagram
 Suggested: the CubeMX pinout view or a hand-annotated board photo
 showing exactly which physical pin each connection uses.
 -->
-![Pinout diagram](./docs/images/pinout-diagram.png)
 
 ---
 
@@ -155,7 +153,7 @@ the text description above.
 
 ---
 
-## Wiring Diagram
+<!--## Wiring Diagram
 
 <!--
 IMAGE: Full wiring/schematic diagram
@@ -163,6 +161,7 @@ Suggested: a Fritzing or hand-drawn schematic showing STM32 <-> L298N
 <-> motors <-> battery/BMS <-> buck converter, and STM32 <-> ESP32
 <-> HC-SR04/servo connections all in one diagram.
 -->
+<!--
 ![Wiring diagram](./docs/images/wiring-diagram.png)
 
 ---
