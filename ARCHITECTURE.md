@@ -1,4 +1,4 @@
-# TRON — System Architecture and Operational Documentation
+# System Architecture and Operational Documentation
 
 ![architecture](./Photos/rescue_rover_system_architecture.png)
 
@@ -6,7 +6,7 @@
 ## 1. Purpose
 
 This document describes the system architecture, task-level design, and
-operational logic of the TRON rover. TRON is an autonomous rover
+operational logic of the rescue rover. It is an autonomous rover
 designed to locate a target carrying a Bluetooth Low Energy (BLE)
 beacon by measuring received signal strength (RSSI), navigate toward
 the target while avoiding obstacles, and halt upon arrival.
