@@ -50,6 +50,8 @@ Mermaid diagram below if you'd rather use a hand-drawn/Figma version.
 -->
 
 ---
+## BLE Beacon Setup
+Install nRF Connect for Mobile and configure the phone as a BLE advertiser with the local name 'MY_PHONE_BEACON' and the 128-bit Service UUID '4f2913e2-3489-4b68-b769-95213600f6ee'. Enable Scannable mode. The rover identifies the target beacon using this Service UUID.
 
 ## Architecture
 ![architecture](./Photos/rescue_rover_system_architecture.png)
