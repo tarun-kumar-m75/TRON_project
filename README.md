@@ -1,10 +1,7 @@
 # TRON — Beacon-Tracking Rescue Rover
 
 <!-- Badges: replace with real ones once CI/license are set up -->
-![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
-![Platform](https://img.shields.io/badge/MCU-STM32H533RE-blue)
-![RTOS](https://img.shields.io/badge/RTOS-%CE%BCT--Kernel%203.0-orange)
-![License](https://img.shields.io/badge/license-TBD-lightgrey)
+
 
 <!--
 IMAGE: Hero shot of the assembled rover
@@ -39,7 +36,7 @@ stops on arrival. Built for a demo/competition event in Japan.
 
 ## Overview
 
-TRON is a two-microcontroller rescue rover:
+This project is a two-microcontroller rescue rover:
 
 - An **ESP32** scans for a BLE beacon (`RESCUE_BEACON`) via NimBLE, filters the received signal strength (median + Kalman filtering), and forwards a single filtered RSSI byte to the STM32 over UART.
 - An **STM32H533RE** (Nucleo-64), running the μT-Kernel 3.0 RTOS, handles everything real-time: distance prediction from RSSI, ultrasonic obstacle sensing, and motor/servo control.
