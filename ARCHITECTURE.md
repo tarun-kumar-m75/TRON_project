@@ -203,14 +203,4 @@ rover can decelerate to a stop within the defined obstacle margin.
 7. The rover halts when both RSSI-based and ultrasonic-based distance
    measurements indicate arrival at the target.
 
----
 
-## 7. Known Limitations and Required Calibration
-
-- RSSI anchor-override thresholds require calibration against
-  measured data for the deployed hardware and environment.
-- Motor and turning speed constants require validation against actual
-  vehicle stopping distance under load.
-- Bearing-sweep timing parameters require tuning against the observed
-  magnitude of RSSI variation across headings on the deployed
-  hardware.
